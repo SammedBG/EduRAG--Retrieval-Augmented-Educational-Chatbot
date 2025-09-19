@@ -47,6 +47,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Additional CORS headers for all responses
+@app.middleware("http")
+async def add_cors_headers(request, call_next):
+    response = await call_next(request)
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
+    response.headers["Access-Control-Allow-Headers"] = "*"
+    return response
+
 # Create necessary directories
 UPLOAD_DIR = Path("uploads")
 DATA_DIR = Path("data/course_notes")
@@ -121,6 +130,11 @@ async def root():
     """Root endpoint"""
     return {"message": "RAG Chatbot API is running!", "status": "healthy"}
 
+@app.options("/{path:path}")
+async def options_handler(path: str):
+    """Handle preflight OPTIONS requests"""
+    return {"message": "OK"}
+
 @app.get("/health")
 async def health_check():
     """Health check endpoint with on-demand reindex if needed.
@@ -143,10 +157,6 @@ async def health_check():
         "message": "Backend is running successfully"
     }
 
-@app.get("/")
-async def root():
-    """Root endpoint"""
-    return {"message": "RAG Chatbot API is running", "status": "ok"}
 
 @app.post("/upload")
 async def upload_files(files: List[UploadFile] = File(...)):
