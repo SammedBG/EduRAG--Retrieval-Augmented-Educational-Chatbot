@@ -6,7 +6,7 @@ import { Header } from './components/Header';
 import { StatusBar } from './components/StatusBar';
 import './App.css';
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'https://edurag-retrieval-augmented-educational.onrender.com';
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://127.0.0.1:8000';
 
 function App() {
   const [files, setFiles] = useState([]);

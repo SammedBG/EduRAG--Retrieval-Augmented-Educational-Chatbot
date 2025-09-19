@@ -7,7 +7,7 @@ Handles file uploads, document processing, and chat API
 from fastapi import FastAPI, File, UploadFile, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import HTMLResponse, Response
+from fastapi.responses import HTMLResponse
 import uvicorn
 import os
 import shutil
@@ -22,129 +22,12 @@ import time
 # Add the rag_chatbot module to the path
 sys.path.append(str(Path(__file__).parent.parent))
 
-# Lazy imports to reduce memory usage
-def _lazy_import():
-    """Import modules only when needed to reduce startup memory"""
-    from rag_chatbot.ingestion import load_documents
-    from rag_chatbot.preprocessing import preprocess_documents
-    from rag_chatbot.embeddings import create_embeddings
-    from rag_chatbot.retrieval import retrieve
-    from rag_chatbot.chatbot import generate_answer
-    return load_documents, preprocess_documents, create_embeddings, retrieve, generate_answer
-
-# S3 Storage Handler (inline to avoid import issues)
-import boto3
-from botocore.exceptions import ClientError, NoCredentialsError
-
-class S3Storage:
-    def __init__(self):
-        self.bucket_name = os.getenv('AWS_S3_BUCKET_NAME', 'edurag-chatbot-files')
-        self.region = os.getenv('AWS_REGION', 'us-east-1')
-        
-        # Initialize S3 client
-        try:
-            self.s3_client = boto3.client(
-                's3',
-                aws_access_key_id=os.getenv('AWS_ACCESS_KEY_ID'),
-                aws_secret_access_key=os.getenv('AWS_SECRET_ACCESS_KEY'),
-                region_name=self.region
-            )
-            self.available = True
-            print("✅ S3 storage initialized successfully")
-        except NoCredentialsError:
-            print("⚠️ AWS credentials not found. S3 storage disabled.")
-            self.available = False
-        except Exception as e:
-            print(f"⚠️ S3 initialization failed: {e}")
-            self.available = False
-    
-    def upload_file(self, file_content: bytes, filename: str) -> bool:
-        """Upload file to S3"""
-        if not self.available:
-            return False
-            
-        try:
-            self.s3_client.put_object(
-                Bucket=self.bucket_name,
-                Key=f"course_notes/{filename}",
-                Body=file_content,
-                ContentType='application/pdf'
-            )
-            print(f"✅ Uploaded {filename} to S3")
-            return True
-        except ClientError as e:
-            print(f"❌ Failed to upload {filename} to S3: {e}")
-            return False
-    
-    def list_files(self) -> List[dict]:
-        """List all PDF files in S3"""
-        if not self.available:
-            return []
-            
-        try:
-            response = self.s3_client.list_objects_v2(
-                Bucket=self.bucket_name,
-                Prefix='course_notes/'
-            )
-            
-            files = []
-            for obj in response.get('Contents', []):
-                if obj['Key'].endswith('.pdf'):
-                    filename = obj['Key'].split('/')[-1]
-                    files.append({
-                        'name': filename,
-                        'size': obj['Size'],
-                        'uploaded': obj['LastModified'].timestamp()
-                    })
-            return files
-        except ClientError as e:
-            print(f"❌ Failed to list files from S3: {e}")
-            return []
-    
-    def delete_file(self, filename: str) -> bool:
-        """Delete file from S3"""
-        if not self.available:
-            return False
-            
-        try:
-            self.s3_client.delete_object(
-                Bucket=self.bucket_name,
-                Key=f"course_notes/{filename}"
-            )
-            print(f"✅ Deleted {filename} from S3")
-            return True
-        except ClientError as e:
-            print(f"❌ Failed to delete {filename} from S3: {e}")
-            return False
-    
-    def download_all_files(self, local_dir: Path) -> List[str]:
-        """Download all files from S3 to local directory for processing"""
-        if not self.available:
-            return []
-            
-        files = self.list_files()
-        downloaded_files = []
-        
-        for file_info in files:
-            filename = file_info['name']
-            try:
-                response = self.s3_client.get_object(
-                    Bucket=self.bucket_name,
-                    Key=f"course_notes/{filename}"
-                )
-                content = response['Body'].read()
-                local_path = local_dir / filename
-                with open(local_path, 'wb') as f:
-                    f.write(content)
-                downloaded_files.append(filename)
-                print(f"✅ Downloaded {filename} for processing")
-            except ClientError as e:
-                print(f"❌ Failed to download {filename}: {e}")
-        
-        return downloaded_files
-
-# Global S3 instance
-s3_storage = S3Storage()
+from rag_chatbot.ingestion import load_documents
+from rag_chatbot.preprocessing import preprocess_documents
+from rag_chatbot.embeddings import create_embeddings
+from rag_chatbot.retrieval import retrieve
+from rag_chatbot.chatbot import generate_answer
+from s3_storage import s3_storage
 
 app = FastAPI(
     title="RAG Chatbot API",
@@ -155,47 +38,17 @@ app = FastAPI(
 # CORS middleware for React frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allow all origins for production
-    allow_credentials=False,  # Set to False when using wildcard origins
-    allow_methods=["*"],  # Allow all methods
-    allow_headers=["*"],  # Allow all headers
+    allow_origins=[
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "https://edu-rag-retrieval-augmented-educati.vercel.app",
+        "https://*.vercel.app",
+        "https://*.onrender.com"
+    ],
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["*"],
 )
-
-# Additional CORS headers for all responses
-@app.middleware("http")
-async def add_cors_headers(request, call_next):
-    # Handle preflight requests
-    if request.method == "OPTIONS":
-        response = Response()
-        response.headers["Access-Control-Allow-Origin"] = "*"
-        response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
-        response.headers["Access-Control-Allow-Headers"] = "*"
-        response.headers["Access-Control-Max-Age"] = "86400"
-        response.headers["Access-Control-Allow-Credentials"] = "false"
-        return response
-    
-    response = await call_next(request)
-    response.headers["Access-Control-Allow-Origin"] = "*"
-    response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
-    response.headers["Access-Control-Allow-Headers"] = "*"
-    response.headers["Access-Control-Max-Age"] = "86400"
-    response.headers["Access-Control-Allow-Credentials"] = "false"
-    return response
-
-# Explicit OPTIONS handler for all routes
-@app.options("/{path:path}")
-async def options_handler(path: str):
-    """Handle preflight OPTIONS requests for all routes"""
-    return Response(
-        status_code=200,
-        headers={
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-            "Access-Control-Allow-Headers": "*",
-            "Access-Control-Max-Age": "86400",
-            "Access-Control-Allow-Credentials": "false"
-        }
-    )
 
 # Create necessary directories
 UPLOAD_DIR = Path("uploads")
@@ -229,7 +82,6 @@ def _needs_reindex() -> bool:
     return _latest_pdf_mtime() > emb_mtime
 
 def _reindex_documents() -> None:
-    load_documents, preprocess_documents, create_embeddings, _, _ = _lazy_import()
     docs = load_documents()
     if not docs:
         # If no docs, remove embeddings file if present
@@ -242,8 +94,41 @@ def _reindex_documents() -> None:
     chunks = preprocess_documents(docs)
     create_embeddings(chunks)
 
-# Skip auto-detect on startup to reduce memory usage
-# Will be done on first request instead
+# Initialize S3 storage and sync on startup
+def _initialize_storage():
+    """Initialize storage and sync from S3 if available"""
+    try:
+        # Sync S3 to local on startup
+        s3_storage.sync_s3_to_local("data", "data")
+        
+        # Load embeddings from S3 if available
+        embeddings_data = s3_storage.load_embeddings()
+        if embeddings_data:
+            # Save to local for immediate use
+            with open(EMBEDDINGS_FILE, 'wb') as f:
+                pickle.dump(embeddings_data, f)
+            print("Loaded embeddings from S3")
+        
+        # Run auto-detect after sync
+        if _needs_reindex():
+            _reindex_documents()
+            # Save new embeddings to S3
+            if EMBEDDINGS_FILE.exists():
+                with open(EMBEDDINGS_FILE, 'rb') as f:
+                    embeddings_data = pickle.load(f)
+                s3_storage.save_embeddings(embeddings_data)
+                print("Saved embeddings to S3")
+    except Exception as e:
+        print(f"Storage initialization failed: {e}")
+        # Fallback to local-only mode
+        try:
+            if _needs_reindex():
+                _reindex_documents()
+        except Exception:
+            pass
+
+# Run initialization on startup
+_initialize_storage()
 
 # WebSocket connection manager
 class ConnectionManager:
@@ -271,12 +156,6 @@ async def root():
     """Root endpoint"""
     return {"message": "RAG Chatbot API is running!", "status": "healthy"}
 
-@app.get("/test-cors")
-async def test_cors():
-    """Test endpoint to verify CORS is working"""
-    return {"message": "CORS is working!", "timestamp": time.time()}
-
-
 @app.get("/health")
 async def health_check():
     """Health check endpoint with on-demand reindex if needed.
@@ -284,25 +163,25 @@ async def health_check():
     Returns fields in both snake_case and camelCase to match the frontend.
     """
     try:
-        # Simple health check without heavy imports
-        ready = EMBEDDINGS_FILE.exists()
-        return {
-            "status": "healthy",
-            "healthy": True,
-            "embeddings_ready": ready,
-            "embeddingsReady": ready,
-            "message": "Backend is running successfully"
-        }
-    except Exception as e:
-        # Fallback health response
-        return {
-            "status": "healthy",
-            "healthy": True,
-            "embeddings_ready": False,
-            "embeddingsReady": False,
-            "message": f"Backend is running (limited mode): {str(e)}"
-        }
+        if _needs_reindex():
+            _reindex_documents()
+    except Exception:
+        # ignore in health response
+        pass
+    ready = EMBEDDINGS_FILE.exists()
+    # Provide both naming styles for compatibility
+    return {
+        "status": "healthy",
+        "healthy": True,
+        "embeddings_ready": ready,
+        "embeddingsReady": ready,
+        "message": "Backend is running successfully"
+    }
 
+@app.get("/")
+async def root():
+    """Root endpoint"""
+    return {"message": "RAG Chatbot API is running", "status": "ok"}
 
 @app.post("/upload")
 async def upload_files(files: List[UploadFile] = File(...)):
@@ -314,19 +193,16 @@ async def upload_files(files: List[UploadFile] = File(...)):
     processed_files = []
     
     try:
-        # Upload files to S3
+        # Save uploaded files
         for file in files:
             if not file.filename.lower().endswith('.pdf'):
                 raise HTTPException(status_code=400, detail=f"Only PDF files are allowed. Got: {file.filename}")
             
-            # Read file content
-            file_content = await file.read()
+            file_path = DATA_DIR / file.filename
+            with open(file_path, "wb") as buffer:
+                shutil.copyfileobj(file.file, buffer)
             
-            # Upload to S3
-            if s3_storage.upload_file(file_content, file.filename):
-                uploaded_files.append(file.filename)
-            else:
-                raise HTTPException(status_code=500, detail=f"Failed to upload {file.filename} to storage")
+            uploaded_files.append(file.filename)
         
         # Process documents and create embeddings
         await manager.broadcast(json.dumps({
@@ -334,29 +210,19 @@ async def upload_files(files: List[UploadFile] = File(...)):
             "message": "Processing uploaded documents..."
         }))
         
-        # Download files from S3 for processing
-        temp_dir = Path("temp_processing")
-        temp_dir.mkdir(exist_ok=True)
+        # Load and process documents
+        docs = load_documents()
+        chunks = preprocess_documents(docs)
+        create_embeddings(chunks)
         
-        try:
-            # Download all files from S3
-            downloaded_files = s3_storage.download_all_files(temp_dir)
-            
-            if downloaded_files:
-                # Load and process documents
-                load_documents, preprocess_documents, create_embeddings, _, _ = _lazy_import()
-                docs = load_documents()
-                chunks = preprocess_documents(docs)
-                create_embeddings(chunks)
-                
-                processed_files = [f for f in uploaded_files]
-            else:
-                raise HTTPException(status_code=500, detail="No files could be downloaded for processing")
-                
-        finally:
-            # Clean up temp directory
-            if temp_dir.exists():
-                shutil.rmtree(temp_dir, ignore_errors=True)
+        # Sync to S3 after processing
+        s3_storage.sync_local_to_s3("data", "data")
+        if EMBEDDINGS_FILE.exists():
+            with open(EMBEDDINGS_FILE, 'rb') as f:
+                embeddings_data = pickle.load(f)
+            s3_storage.save_embeddings(embeddings_data)
+        
+        processed_files = [f for f in uploaded_files]
         
         await manager.broadcast(json.dumps({
             "type": "processing_complete",
@@ -364,26 +230,19 @@ async def upload_files(files: List[UploadFile] = File(...)):
             "files": processed_files
         }))
         
-        response_data = {
+        return {
             "message": f"Successfully uploaded and processed {len(processed_files)} files",
             "uploaded_files": uploaded_files,
             "processed_files": processed_files,
-            "embeddings_created": True,
-            "storage": "AWS S3" if s3_storage.available else "Local (fallback)"
+            "embeddings_created": True
         }
-        
-        # Create response with explicit CORS headers
-        from fastapi.responses import JSONResponse
-        response = JSONResponse(content=response_data)
-        response.headers["Access-Control-Allow-Origin"] = "*"
-        response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
-        response.headers["Access-Control-Allow-Headers"] = "*"
-        return response
         
     except Exception as e:
         # Clean up uploaded files on error
         for filename in uploaded_files:
-            s3_storage.delete_file(filename)
+            file_path = DATA_DIR / filename
+            if file_path.exists():
+                file_path.unlink()
         
         raise HTTPException(status_code=500, detail=f"Error processing files: {str(e)}")
 
@@ -405,7 +264,6 @@ async def chat_endpoint(message: dict):
             raise HTTPException(status_code=400, detail="No documents processed yet. Please upload files first.")
         
         # Retrieve relevant chunks
-        _, _, _, retrieve, generate_answer = _lazy_import()
         results = retrieve(query, top_k=3)
         
         if not results:
@@ -470,7 +328,6 @@ async def websocket_endpoint(websocket: WebSocket):
                     continue
                 
                 # Retrieve relevant chunks
-                _, _, _, retrieve, generate_answer = _lazy_import()
                 results = retrieve(query, top_k=3)
                 
                 if not results:
@@ -520,49 +377,38 @@ async def websocket_endpoint(websocket: WebSocket):
 @app.get("/files")
 async def list_files():
     """List uploaded files"""
-    try:
-        if s3_storage.available:
-            # Get files from S3
-            files = s3_storage.list_files()
-            return {"files": files, "storage": "AWS S3"}
-        else:
-            # Fallback to local storage
-            files = []
-            if DATA_DIR.exists():
-                for file_path in DATA_DIR.glob("*.pdf"):
-                    files.append({
-                        "name": file_path.name,
-                        "size": file_path.stat().st_size,
-                        "uploaded": file_path.stat().st_mtime
-                    })
-            return {"files": files, "storage": "Local (fallback)"}
-    except Exception as e:
-        return {"files": [], "error": str(e), "storage": "Error"}
+    files = []
+    if DATA_DIR.exists():
+        for file_path in DATA_DIR.glob("*.pdf"):
+            files.append({
+                "name": file_path.name,
+                "size": file_path.stat().st_size,
+                "uploaded": file_path.stat().st_mtime
+            })
+    
+    return {"files": files}
 
 @app.delete("/files/{filename}")
 async def delete_file(filename: str):
     """Delete a specific file"""
+    file_path = DATA_DIR / filename
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="File not found")
+    
     try:
-        if s3_storage.available:
-            # Delete from S3
-            if s3_storage.delete_file(filename):
-                # Recreate embeddings after file deletion
-                _reindex_documents()
-                return {"message": f"File {filename} deleted successfully from S3"}
-            else:
-                raise HTTPException(status_code=404, detail="File not found in S3")
-        else:
-            # Fallback to local storage
-            file_path = DATA_DIR / filename
-            if not file_path.exists():
-                raise HTTPException(status_code=404, detail="File not found")
-            
-            file_path.unlink()
-            
-            # Recreate embeddings after file deletion
-            _reindex_documents()
-            
-            return {"message": f"File {filename} deleted successfully from local storage"}
+        file_path.unlink()
+        
+        # Recreate embeddings after file deletion
+        _reindex_documents()
+        
+        # Sync to S3 after deletion
+        s3_storage.sync_local_to_s3("data", "data")
+        if EMBEDDINGS_FILE.exists():
+            with open(EMBEDDINGS_FILE, 'rb') as f:
+                embeddings_data = pickle.load(f)
+            s3_storage.save_embeddings(embeddings_data)
+        
+        return {"message": f"File {filename} deleted successfully"}
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error deleting file: {str(e)}")
