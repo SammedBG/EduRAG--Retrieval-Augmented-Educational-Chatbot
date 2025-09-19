@@ -157,8 +157,8 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # Allow all origins for production
     allow_credentials=False,  # Set to False when using wildcard origins
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=["*"],
+    allow_methods=["*"],  # Allow all methods
+    allow_headers=["*"],  # Allow all headers
 )
 
 # Additional CORS headers for all responses
@@ -171,6 +171,7 @@ async def add_cors_headers(request, call_next):
         response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
         response.headers["Access-Control-Allow-Headers"] = "*"
         response.headers["Access-Control-Max-Age"] = "86400"
+        response.headers["Access-Control-Allow-Credentials"] = "false"
         return response
     
     response = await call_next(request)
@@ -178,7 +179,23 @@ async def add_cors_headers(request, call_next):
     response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
     response.headers["Access-Control-Allow-Headers"] = "*"
     response.headers["Access-Control-Max-Age"] = "86400"
+    response.headers["Access-Control-Allow-Credentials"] = "false"
     return response
+
+# Explicit OPTIONS handler for all routes
+@app.options("/{path:path}")
+async def options_handler(path: str):
+    """Handle preflight OPTIONS requests for all routes"""
+    return Response(
+        status_code=200,
+        headers={
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+            "Access-Control-Allow-Headers": "*",
+            "Access-Control-Max-Age": "86400",
+            "Access-Control-Allow-Credentials": "false"
+        }
+    )
 
 # Create necessary directories
 UPLOAD_DIR = Path("uploads")
@@ -253,6 +270,11 @@ manager = ConnectionManager()
 async def root():
     """Root endpoint"""
     return {"message": "RAG Chatbot API is running!", "status": "healthy"}
+
+@app.get("/test-cors")
+async def test_cors():
+    """Test endpoint to verify CORS is working"""
+    return {"message": "CORS is working!", "timestamp": time.time()}
 
 
 @app.get("/health")
@@ -342,13 +364,21 @@ async def upload_files(files: List[UploadFile] = File(...)):
             "files": processed_files
         }))
         
-        return {
+        response_data = {
             "message": f"Successfully uploaded and processed {len(processed_files)} files",
             "uploaded_files": uploaded_files,
             "processed_files": processed_files,
             "embeddings_created": True,
             "storage": "AWS S3" if s3_storage.available else "Local (fallback)"
         }
+        
+        # Create response with explicit CORS headers
+        from fastapi.responses import JSONResponse
+        response = JSONResponse(content=response_data)
+        response.headers["Access-Control-Allow-Origin"] = "*"
+        response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
+        response.headers["Access-Control-Allow-Headers"] = "*"
+        return response
         
     except Exception as e:
         # Clean up uploaded files on error
