@@ -32,6 +32,9 @@ def _lazy_import():
     from rag_chatbot.chatbot import generate_answer
     return load_documents, preprocess_documents, create_embeddings, retrieve, generate_answer
 
+# Import S3 storage (lightweight)
+from s3_storage import s3_storage
+
 app = FastAPI(
     title="RAG Chatbot API",
     description="AI-powered document querying system",
@@ -178,16 +181,19 @@ async def upload_files(files: List[UploadFile] = File(...)):
     processed_files = []
     
     try:
-        # Save uploaded files
+        # Upload files to S3
         for file in files:
             if not file.filename.lower().endswith('.pdf'):
                 raise HTTPException(status_code=400, detail=f"Only PDF files are allowed. Got: {file.filename}")
             
-            file_path = DATA_DIR / file.filename
-            with open(file_path, "wb") as buffer:
-                shutil.copyfileobj(file.file, buffer)
+            # Read file content
+            file_content = await file.read()
             
-            uploaded_files.append(file.filename)
+            # Upload to S3
+            if s3_storage.upload_file(file_content, file.filename):
+                uploaded_files.append(file.filename)
+            else:
+                raise HTTPException(status_code=500, detail=f"Failed to upload {file.filename} to storage")
         
         # Process documents and create embeddings
         await manager.broadcast(json.dumps({
@@ -195,13 +201,29 @@ async def upload_files(files: List[UploadFile] = File(...)):
             "message": "Processing uploaded documents..."
         }))
         
-        # Load and process documents
-        load_documents, preprocess_documents, create_embeddings, _, _ = _lazy_import()
-        docs = load_documents()
-        chunks = preprocess_documents(docs)
-        create_embeddings(chunks)
+        # Download files from S3 for processing
+        temp_dir = Path("temp_processing")
+        temp_dir.mkdir(exist_ok=True)
         
-        processed_files = [f for f in uploaded_files]
+        try:
+            # Download all files from S3
+            downloaded_files = s3_storage.download_all_files(temp_dir)
+            
+            if downloaded_files:
+                # Load and process documents
+                load_documents, preprocess_documents, create_embeddings, _, _ = _lazy_import()
+                docs = load_documents()
+                chunks = preprocess_documents(docs)
+                create_embeddings(chunks)
+                
+                processed_files = [f for f in uploaded_files]
+            else:
+                raise HTTPException(status_code=500, detail="No files could be downloaded for processing")
+                
+        finally:
+            # Clean up temp directory
+            if temp_dir.exists():
+                shutil.rmtree(temp_dir, ignore_errors=True)
         
         await manager.broadcast(json.dumps({
             "type": "processing_complete",
@@ -213,15 +235,14 @@ async def upload_files(files: List[UploadFile] = File(...)):
             "message": f"Successfully uploaded and processed {len(processed_files)} files",
             "uploaded_files": uploaded_files,
             "processed_files": processed_files,
-            "embeddings_created": True
+            "embeddings_created": True,
+            "storage": "AWS S3" if s3_storage.available else "Local (fallback)"
         }
         
     except Exception as e:
         # Clean up uploaded files on error
         for filename in uploaded_files:
-            file_path = DATA_DIR / filename
-            if file_path.exists():
-                file_path.unlink()
+            s3_storage.delete_file(filename)
         
         raise HTTPException(status_code=500, detail=f"Error processing files: {str(e)}")
 
@@ -359,33 +380,48 @@ async def websocket_endpoint(websocket: WebSocket):
 async def list_files():
     """List uploaded files"""
     try:
-        files = []
-        if DATA_DIR.exists():
-            for file_path in DATA_DIR.glob("*.pdf"):
-                files.append({
-                    "name": file_path.name,
-                    "size": file_path.stat().st_size,
-                    "uploaded": file_path.stat().st_mtime
-                })
-        
-        return {"files": files}
+        if s3_storage.available:
+            # Get files from S3
+            files = s3_storage.list_files()
+            return {"files": files, "storage": "AWS S3"}
+        else:
+            # Fallback to local storage
+            files = []
+            if DATA_DIR.exists():
+                for file_path in DATA_DIR.glob("*.pdf"):
+                    files.append({
+                        "name": file_path.name,
+                        "size": file_path.stat().st_size,
+                        "uploaded": file_path.stat().st_mtime
+                    })
+            return {"files": files, "storage": "Local (fallback)"}
     except Exception as e:
-        return {"files": [], "error": str(e)}
+        return {"files": [], "error": str(e), "storage": "Error"}
 
 @app.delete("/files/{filename}")
 async def delete_file(filename: str):
     """Delete a specific file"""
-    file_path = DATA_DIR / filename
-    if not file_path.exists():
-        raise HTTPException(status_code=404, detail="File not found")
-    
     try:
-        file_path.unlink()
-        
-        # Recreate embeddings after file deletion
-        _reindex_documents()
-        
-        return {"message": f"File {filename} deleted successfully"}
+        if s3_storage.available:
+            # Delete from S3
+            if s3_storage.delete_file(filename):
+                # Recreate embeddings after file deletion
+                _reindex_documents()
+                return {"message": f"File {filename} deleted successfully from S3"}
+            else:
+                raise HTTPException(status_code=404, detail="File not found in S3")
+        else:
+            # Fallback to local storage
+            file_path = DATA_DIR / filename
+            if not file_path.exists():
+                raise HTTPException(status_code=404, detail="File not found")
+            
+            file_path.unlink()
+            
+            # Recreate embeddings after file deletion
+            _reindex_documents()
+            
+            return {"message": f"File {filename} deleted successfully from local storage"}
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error deleting file: {str(e)}")
