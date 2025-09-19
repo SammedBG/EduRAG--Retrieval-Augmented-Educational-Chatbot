@@ -1,0 +1,10 @@
+numpy
+scikit-learn
+faiss-cpu
+sentence-transformers
+torch
+transformers
+PyPDF2
+accelerate
+requests
+python-dotenv
