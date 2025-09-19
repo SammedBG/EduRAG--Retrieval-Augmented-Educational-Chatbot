@@ -35,6 +35,8 @@ app = FastAPI(
     version="1.0.0"
 )
 
+origins = ["https://edu-rag-retrieval-augmented-educati.vercel.app/"]
+
 # CORS middleware for React frontend
 app.add_middleware(
     CORSMiddleware,
