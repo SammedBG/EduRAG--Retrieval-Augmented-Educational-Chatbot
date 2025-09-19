@@ -22,11 +22,15 @@ import time
 # Add the rag_chatbot module to the path
 sys.path.append(str(Path(__file__).parent.parent))
 
-from rag_chatbot.ingestion import load_documents
-from rag_chatbot.preprocessing import preprocess_documents
-from rag_chatbot.embeddings import create_embeddings
-from rag_chatbot.retrieval import retrieve
-from rag_chatbot.chatbot import generate_answer
+# Lazy imports to reduce memory usage
+def _lazy_import():
+    """Import modules only when needed to reduce startup memory"""
+    from rag_chatbot.ingestion import load_documents
+    from rag_chatbot.preprocessing import preprocess_documents
+    from rag_chatbot.embeddings import create_embeddings
+    from rag_chatbot.retrieval import retrieve
+    from rag_chatbot.chatbot import generate_answer
+    return load_documents, preprocess_documents, create_embeddings, retrieve, generate_answer
 
 app = FastAPI(
     title="RAG Chatbot API",
@@ -37,13 +41,7 @@ app = FastAPI(
 # CORS middleware for React frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-        "https://edu-rag-retrieval-augmented-educati.vercel.app",
-        "https://*.vercel.app",
-        "https://*.onrender.com"
-    ],
+    allow_origins=["*"],  # Allow all origins for production
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
@@ -81,6 +79,7 @@ def _needs_reindex() -> bool:
     return _latest_pdf_mtime() > emb_mtime
 
 def _reindex_documents() -> None:
+    load_documents, preprocess_documents, create_embeddings, _, _ = _lazy_import()
     docs = load_documents()
     if not docs:
         # If no docs, remove embeddings file if present
@@ -93,13 +92,8 @@ def _reindex_documents() -> None:
     chunks = preprocess_documents(docs)
     create_embeddings(chunks)
 
-# Run auto-detect on startup
-try:
-    if _needs_reindex():
-        _reindex_documents()
-except Exception:
-    # Do not block startup if reindex fails; endpoints will retry
-    pass
+# Skip auto-detect on startup to reduce memory usage
+# Will be done on first request instead
 
 # WebSocket connection manager
 class ConnectionManager:
@@ -182,6 +176,7 @@ async def upload_files(files: List[UploadFile] = File(...)):
         }))
         
         # Load and process documents
+        load_documents, preprocess_documents, create_embeddings, _, _ = _lazy_import()
         docs = load_documents()
         chunks = preprocess_documents(docs)
         create_embeddings(chunks)
@@ -228,6 +223,7 @@ async def chat_endpoint(message: dict):
             raise HTTPException(status_code=400, detail="No documents processed yet. Please upload files first.")
         
         # Retrieve relevant chunks
+        _, _, _, retrieve, generate_answer = _lazy_import()
         results = retrieve(query, top_k=3)
         
         if not results:
@@ -292,6 +288,7 @@ async def websocket_endpoint(websocket: WebSocket):
                     continue
                 
                 # Retrieve relevant chunks
+                _, _, _, retrieve, generate_answer = _lazy_import()
                 results = retrieve(query, top_k=3)
                 
                 if not results:
