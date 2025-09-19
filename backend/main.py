@@ -142,20 +142,24 @@ async def health_check():
     Returns fields in both snake_case and camelCase to match the frontend.
     """
     try:
-        if _needs_reindex():
-            _reindex_documents()
-    except Exception:
-        # ignore in health response
-        pass
-    ready = EMBEDDINGS_FILE.exists()
-    # Provide both naming styles for compatibility
-    return {
-        "status": "healthy",
-        "healthy": True,
-        "embeddings_ready": ready,
-        "embeddingsReady": ready,
-        "message": "Backend is running successfully"
-    }
+        # Simple health check without heavy imports
+        ready = EMBEDDINGS_FILE.exists()
+        return {
+            "status": "healthy",
+            "healthy": True,
+            "embeddings_ready": ready,
+            "embeddingsReady": ready,
+            "message": "Backend is running successfully"
+        }
+    except Exception as e:
+        # Fallback health response
+        return {
+            "status": "healthy",
+            "healthy": True,
+            "embeddings_ready": False,
+            "embeddingsReady": False,
+            "message": f"Backend is running (limited mode): {str(e)}"
+        }
 
 
 @app.post("/upload")
@@ -348,16 +352,19 @@ async def websocket_endpoint(websocket: WebSocket):
 @app.get("/files")
 async def list_files():
     """List uploaded files"""
-    files = []
-    if DATA_DIR.exists():
-        for file_path in DATA_DIR.glob("*.pdf"):
-            files.append({
-                "name": file_path.name,
-                "size": file_path.stat().st_size,
-                "uploaded": file_path.stat().st_mtime
-            })
-    
-    return {"files": files}
+    try:
+        files = []
+        if DATA_DIR.exists():
+            for file_path in DATA_DIR.glob("*.pdf"):
+                files.append({
+                    "name": file_path.name,
+                    "size": file_path.stat().st_size,
+                    "uploaded": file_path.stat().st_mtime
+                })
+        
+        return {"files": files}
+    except Exception as e:
+        return {"files": [], "error": str(e)}
 
 @app.delete("/files/{filename}")
 async def delete_file(filename: str):
