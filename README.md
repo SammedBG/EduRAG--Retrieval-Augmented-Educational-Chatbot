@@ -22,7 +22,7 @@ A complete **Retrieval-Augmented Generation (RAG)** chatbot with React frontend 
 - **Health Checks**: Built-in monitoring and health endpoints
 - **Scalable Architecture**: Ready for horizontal scaling
 
-## 🚀 Quick Start
+## 🚀 Quick Start (Local)
 
 ### Option 1: Docker Deployment (Recommended)
 ```bash
@@ -62,11 +62,11 @@ RAG_CHATBOT/
 │   │   ├── App.js         # Main app component
 │   │   └── App.css        # Styling
 │   ├── public/            # Static files
-│   ├── Dockerfile         # Frontend container
+│   ├── Dockerfile         # (removed for Vercel deploy)
 │   └── package.json       # Dependencies
 ├── 🔧 Backend (FastAPI)
 │   ├── main.py           # API endpoints
-│   ├── Dockerfile        # Backend container
+│   ├── Dockerfile        # (removed for Render deploy)
 │   └── requirements.txt  # Backend dependencies
 ├── 🧠 Core RAG System
 │   ├── rag_chatbot/
@@ -75,11 +75,8 @@ RAG_CHATBOT/
 │   │   ├── embeddings.py # Vector creation
 │   │   ├── ingestion.py  # File processing
 │   │   └── preprocessing.py # Text cleaning
-├── 🐳 Deployment
-│   ├── docker-compose.yml # Multi-container setup
-│   ├── nginx.conf        # Reverse proxy
-│   ├── start.sh          # Linux/Mac startup
-│   └── start.bat         # Windows startup
+├── 🐳 Deployment (docs only)
+│   ├── DEPLOYMENT.md     # Detailed deployment guide
 └── 📚 Documentation
     ├── README.md         # This file
     ├── DEPLOYMENT.md     # Detailed deployment guide
@@ -124,7 +121,50 @@ After deployment:
 - **Frontend**: http://localhost:3000
 - **Backend API**: http://localhost:8000
 - **API Documentation**: http://localhost:8000/docs
-- **Nginx Proxy**: http://localhost:80
+- (If using Docker locally you can add your own reverse proxy; for Vercel + Render this is not needed.)
+
+## 🆓 Free Deployment (Vercel + Render)
+
+This repository is structured so Render can use the repo root and import the package in `rag_chatbot/`, while Vercel builds the React app from `frontend/`.
+
+### 1) Backend on Render (FastAPI)
+- Create a Web Service from this repository (repo root).
+- Environment Variables:
+  - `GROQ_API_KEY` (optional, recommended)
+  - `HF_API_TOKEN` (optional)
+- Build Command:
+```
+pip install -r requirements.txt && pip install -r backend/requirements.txt
+```
+- Start Command:
+```
+uvicorn backend.main:app --host 0.0.0.0 --port $PORT
+```
+- Optional persistent disk (recommended):
+  - Mount to `/app/data` and `/app/embeddings` to persist uploads and indices.
+- Verify:
+  - `https://YOUR-BACKEND.onrender.com/health` should return `healthy` and `embeddingsReady: true` after PDFs are indexed.
+
+### 2) Frontend on Vercel (React)
+- Import the `frontend/` folder.
+- Environment Variable:
+  - `REACT_APP_API_URL=https://YOUR-BACKEND.onrender.com`
+- Build Command:
+```
+npm install && npm run build
+```
+- Output Directory: `build`
+
+### 3) CORS & Security
+- In `backend/main.py`, after deployment, narrow CORS:
+  - Replace `allow_origins=["*"]` with your Vercel domain, e.g. `allow_origins=["https://your-frontend.vercel.app"]`.
+
+### 4) Uploads and Embeddings in Production
+- PDFs are stored under `data/course_notes/`. The backend auto-detects new/changed PDFs and rebuilds embeddings on startup and when `/health` or `/chat` are hit.
+- FAISS index is in-memory; if you delete PDFs and notice stale hits, restart the backend to reload the index.
+
+### 5) Folder Structure on Render
+- Keep both `backend/` and `rag_chatbot/` at the repository root. `backend/main.py` adjusts `sys.path` so imports from `rag_chatbot` work.
 
 ## 📊 API Endpoints
 
