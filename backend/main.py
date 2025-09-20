@@ -12,6 +12,7 @@ import uvicorn
 import os
 import shutil
 import asyncio
+import psutil
 from pathlib import Path
 import json
 from typing import List, Optional
@@ -53,21 +54,6 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
-
-# Root endpoint for testing
-@app.get("/")
-async def root():
-    return {
-        "message": "RAG Chatbot API is running",
-        "version": "1.0.0",
-        "endpoints": {
-            "health": "/health",
-            "upload": "/upload",
-            "chat": "/chat",
-            "files": "/files",
-            "websocket": "/ws"
-        }
-    }
 
 # CORS preflight handler
 @app.options("/{path:path}")
@@ -131,26 +117,15 @@ def _initialize_storage():
                     pickle.dump(embeddings_data, f)
                 print("Loaded embeddings from S3")
         
-        # Only reindex if absolutely necessary
-        if _needs_reindex():
-            print("Reindexing documents...")
-            _reindex_documents()
-            # Save to S3 if configured
-            if s3_storage.s3_client and EMBEDDINGS_FILE.exists():
-                with open(EMBEDDINGS_FILE, 'rb') as f:
-                    embeddings_data = pickle.load(f)
-                s3_storage.save_embeddings(embeddings_data)
-                print("Saved embeddings to S3")
+        # Only reindex if absolutely necessary (skip on startup to save memory)
+        # Reindexing will happen on first API call if needed
+        print("Storage initialization complete - reindexing will happen on demand")
     except Exception as e:
         print(f"Storage initialization failed: {e}")
-        # Minimal fallback
-        try:
-            if _needs_reindex():
-                _reindex_documents()
-        except Exception:
-            pass
+        # Minimal fallback - no reindexing on startup
+        pass
 
-# Run initialization on startup
+# Run initialization on startup (minimal)
 _initialize_storage()
 
 # WebSocket connection manager
@@ -177,7 +152,17 @@ manager = ConnectionManager()
 @app.get("/")
 async def root():
     """Root endpoint"""
-    return {"message": "RAG Chatbot API is running!", "status": "healthy"}
+    return {
+        "message": "RAG Chatbot API is running",
+        "version": "1.0.0",
+        "endpoints": {
+            "health": "/health",
+            "upload": "/upload",
+            "chat": "/chat",
+            "files": "/files",
+            "websocket": "/ws"
+        }
+    }
 
 @app.get("/health")
 async def health_check():
@@ -186,25 +171,49 @@ async def health_check():
     Returns fields in both snake_case and camelCase to match the frontend.
     """
     try:
+        # Only reindex if absolutely necessary (save memory)
         if _needs_reindex():
+            print("Reindexing documents on health check...")
             _reindex_documents()
-    except Exception:
+            # Save to S3 if configured
+            if s3_storage.s3_client and EMBEDDINGS_FILE.exists():
+                with open(EMBEDDINGS_FILE, 'rb') as f:
+                    embeddings_data = pickle.load(f)
+                s3_storage.save_embeddings(embeddings_data)
+    except Exception as e:
+        print(f"Health check reindex failed: {e}")
         # ignore in health response
         pass
+    
     ready = EMBEDDINGS_FILE.exists()
+    
+    # Get memory usage
+    process = psutil.Process()
+    memory_mb = process.memory_info().rss / 1024 / 1024
+    
     # Provide both naming styles for compatibility
     return {
         "status": "healthy",
         "healthy": True,
         "embeddings_ready": ready,
         "embeddingsReady": ready,
+        "memory_usage_mb": round(memory_mb, 1),
         "message": "Backend is running successfully"
     }
 
-@app.get("/")
-async def root():
-    """Root endpoint"""
-    return {"message": "RAG Chatbot API is running", "status": "ok"}
+@app.get("/memory")
+async def memory_status():
+    """Memory usage endpoint for debugging"""
+    process = psutil.Process()
+    memory_info = process.memory_info()
+    memory_mb = memory_info.rss / 1024 / 1024
+    
+    return {
+        "memory_usage_mb": round(memory_mb, 1),
+        "memory_percent": process.memory_percent(),
+        "available_memory_mb": round(psutil.virtual_memory().available / 1024 / 1024, 1),
+        "total_memory_mb": round(psutil.virtual_memory().total / 1024 / 1024, 1)
+    }
 
 @app.post("/upload")
 async def upload_files(files: List[UploadFile] = File(...)):
