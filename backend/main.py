@@ -178,7 +178,7 @@ async def health_check():
         "healthy": True,
         "embeddings_ready": ready,
         "embeddingsReady": ready,
-        "message": "Backend is running successfully"
+        "message": "Upload documents to create embeddings" if not ready else "Ready for queries"
     }
 
 @app.get("/")
