@@ -17,6 +17,7 @@ import json
 from typing import List, Optional
 import sys
 import time
+import pickle
 
 
 # Add the rag_chatbot module to the path
@@ -44,17 +45,17 @@ app = FastAPI(
     version="1.0.0"
 )
 
-origins = ["https://edu-rag-retrieval-augmented-educati.vercel.app"]
+origins = ["*"]
 
 # CORS middleware for React frontend
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:3000",
-        "http://127.0.0.1:3000",
-        "https://edu-rag-retrieval-augmented-educati.vercel.app",
+        "http://127.0.0.1:3000",,
         "https://*.vercel.app",
         "https://*.onrender.com"
+        "*"
     ],
     allow_credentials=True,
     allow_methods=["*"],
