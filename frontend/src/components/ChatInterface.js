@@ -1,21 +1,19 @@
-import React, { useState, useRef, useEffect } from "react";
-import axios from "axios";
-import ReactMarkdown from "react-markdown";
-import { Send, Bot, User, FileText, AlertCircle, Loader } from "lucide-react";
+import React, { useState, useRef, useEffect } from 'react';
+import axios from 'axios';
+import ReactMarkdown from 'react-markdown';
+import { Send, Bot, User, FileText, AlertCircle, Loader } from 'lucide-react';
 
-const API_BASE_URL =
-  process.env.REACT_APP_API_URL ||
-  "https://edurag-retrieval-augmented-educational.onrender.com";
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
 
 export const ChatInterface = ({ systemStatus, files }) => {
   const [messages, setMessages] = useState([]);
-  const [inputMessage, setInputMessage] = useState("");
+  const [inputMessage, setInputMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
   const messagesEndRef = useRef(null);
 
   const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
   useEffect(() => {
@@ -27,49 +25,49 @@ export const ChatInterface = ({ systemStatus, files }) => {
 
     const userMessage = {
       id: Date.now(),
-      type: "user",
+      type: 'user',
       content: inputMessage,
-      timestamp: new Date(),
+      timestamp: new Date()
     };
 
-    setMessages((prev) => [...prev, userMessage]);
-    setInputMessage("");
+    setMessages(prev => [...prev, userMessage]);
+    setInputMessage('');
     setIsLoading(true);
     setError(null);
 
     try {
       const response = await axios.post(`${API_BASE_URL}/chat`, {
-        message: inputMessage,
+        message: inputMessage
       });
 
       const botMessage = {
         id: Date.now() + 1,
-        type: "bot",
+        type: 'bot',
         content: response.data.answer,
         sources: response.data.sources || [],
-        timestamp: new Date(),
+        timestamp: new Date()
       };
 
-      setMessages((prev) => [...prev, botMessage]);
+      setMessages(prev => [...prev, botMessage]);
     } catch (error) {
-      console.error("Error sending message:", error);
-      setError(error.response?.data?.detail || "Error sending message");
-
+      console.error('Error sending message:', error);
+      setError(error.response?.data?.detail || 'Error sending message');
+      
       const errorMessage = {
         id: Date.now() + 1,
-        type: "error",
-        content: error.response?.data?.detail || "Error sending message",
-        timestamp: new Date(),
+        type: 'error',
+        content: error.response?.data?.detail || 'Error sending message',
+        timestamp: new Date()
       };
 
-      setMessages((prev) => [...prev, errorMessage]);
+      setMessages(prev => [...prev, errorMessage]);
     } finally {
       setIsLoading(false);
     }
   };
 
   const handleKeyPress = (e) => {
-    if (e.key === "Enter" && !e.shiftKey) {
+    if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       sendMessage();
     }
@@ -84,7 +82,7 @@ export const ChatInterface = ({ systemStatus, files }) => {
     "What is Parkinson's disease?",
     "How is Parkinson's disease detected?",
     "What are the symptoms of Parkinson's?",
-    "What machine learning methods are used for detection?",
+    "What machine learning methods are used for detection?"
   ];
 
   return (
@@ -93,9 +91,7 @@ export const ChatInterface = ({ systemStatus, files }) => {
         {/* Chat Header */}
         <div className="p-4 border-b bg-gray-50 rounded-t-lg">
           <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-gray-900">
-              Chat with Your Documents
-            </h2>
+            <h2 className="text-lg font-semibold text-gray-900">Chat with Your Documents</h2>
             <div className="flex items-center space-x-2">
               {systemStatus.embeddingsReady ? (
                 <div className="flex items-center space-x-1 text-green-600">
@@ -129,7 +125,7 @@ export const ChatInterface = ({ systemStatus, files }) => {
               <p className="text-gray-500 mb-6">
                 Ask questions about the content in your uploaded PDF files
               </p>
-
+              
               {systemStatus.embeddingsReady && (
                 <div className="space-y-2">
                   <p className="text-sm text-gray-600">Try asking:</p>
@@ -151,23 +147,21 @@ export const ChatInterface = ({ systemStatus, files }) => {
             messages.map((message) => (
               <div
                 key={message.id}
-                className={`flex ${
-                  message.type === "user" ? "justify-end" : "justify-start"
-                }`}
+                className={`flex ${message.type === 'user' ? 'justify-end' : 'justify-start'}`}
               >
                 <div
                   className={`max-w-[80%] rounded-lg p-3 ${
-                    message.type === "user"
-                      ? "bg-blue-600 text-white"
-                      : message.type === "error"
-                      ? "bg-red-100 text-red-800 border border-red-200"
-                      : "bg-gray-100 text-gray-900"
+                    message.type === 'user'
+                      ? 'bg-blue-600 text-white'
+                      : message.type === 'error'
+                      ? 'bg-red-100 text-red-800 border border-red-200'
+                      : 'bg-gray-100 text-gray-900'
                   }`}
                 >
                   <div className="flex items-start space-x-2">
-                    {message.type === "user" ? (
+                    {message.type === 'user' ? (
                       <User className="h-4 w-4 mt-0.5 flex-shrink-0" />
-                    ) : message.type === "error" ? (
+                    ) : message.type === 'error' ? (
                       <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
                     ) : (
                       <Bot className="h-4 w-4 mt-0.5 flex-shrink-0" />
@@ -176,27 +170,18 @@ export const ChatInterface = ({ systemStatus, files }) => {
                       <ReactMarkdown className="prose prose-sm max-w-none">
                         {message.content}
                       </ReactMarkdown>
-
+                      
                       {message.sources && message.sources.length > 0 && (
                         <div className="mt-3 pt-3 border-t border-gray-200">
-                          <p className="text-xs font-medium text-gray-600 mb-2">
-                            Sources:
-                          </p>
+                          <p className="text-xs font-medium text-gray-600 mb-2">Sources:</p>
                           <div className="space-y-1">
                             {message.sources.map((source, index) => (
-                              <div
-                                key={index}
-                                className="text-xs text-gray-600"
-                              >
+                              <div key={index} className="text-xs text-gray-600">
                                 <div className="flex items-center space-x-1">
                                   <FileText className="h-3 w-3" />
-                                  <span className="font-medium">
-                                    {source.file}
-                                  </span>
+                                  <span className="font-medium">{source.file}</span>
                                 </div>
-                                <p className="text-gray-500 mt-1">
-                                  {source.chunk}
-                                </p>
+                                <p className="text-gray-500 mt-1">{source.chunk}</p>
                               </div>
                             ))}
                           </div>
@@ -208,7 +193,7 @@ export const ChatInterface = ({ systemStatus, files }) => {
               </div>
             ))
           )}
-
+          
           {isLoading && (
             <div className="flex justify-start">
               <div className="bg-gray-100 rounded-lg p-3">
@@ -219,7 +204,7 @@ export const ChatInterface = ({ systemStatus, files }) => {
               </div>
             </div>
           )}
-
+          
           <div ref={messagesEndRef} />
         </div>
 
@@ -241,17 +226,13 @@ export const ChatInterface = ({ systemStatus, files }) => {
             />
             <button
               onClick={sendMessage}
-              disabled={
-                !inputMessage.trim() ||
-                !systemStatus.embeddingsReady ||
-                isLoading
-              }
+              disabled={!inputMessage.trim() || !systemStatus.embeddingsReady || isLoading}
               className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
             >
               <Send className="h-4 w-4" />
             </button>
           </div>
-
+          
           {error && (
             <div className="mt-2 p-2 bg-red-100 text-red-800 rounded text-sm">
               {error}
