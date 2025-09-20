@@ -12,7 +12,6 @@ import uvicorn
 import os
 import shutil
 import asyncio
-import psutil
 from pathlib import Path
 import json
 from typing import List, Optional
@@ -45,20 +44,13 @@ app.add_middleware(
         "http://localhost:3000",
         "http://127.0.0.1:3000",
         "https://edu-rag-retrieval-augmented-educati.vercel.app",
-        "https://rag-chatbot-backend.onrender.com",
         "https://*.vercel.app",
-        "https://*.onrender.com",
-        "*"  # Allow all origins for development
+        "https://*.onrender.com"
     ],
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# CORS preflight handler
-@app.options("/{path:path}")
-async def options_handler(path: str):
-    return {"message": "OK"}
 
 # Create necessary directories
 UPLOAD_DIR = Path("uploads")
@@ -104,28 +96,40 @@ def _reindex_documents() -> None:
     chunks = preprocess_documents(docs)
     create_embeddings(chunks)
 
-# Initialize storage on startup (lazy loading to save memory)
+# Initialize S3 storage and sync on startup
 def _initialize_storage():
     """Initialize storage and sync from S3 if available"""
     try:
-        # Only sync if S3 is configured and we have no local embeddings
-        if s3_storage.s3_client and not EMBEDDINGS_FILE.exists():
-            print("Loading embeddings from S3...")
-            embeddings_data = s3_storage.load_embeddings()
-            if embeddings_data:
-                with open(EMBEDDINGS_FILE, 'wb') as f:
-                    pickle.dump(embeddings_data, f)
-                print("Loaded embeddings from S3")
+        # Sync S3 to local on startup
+        s3_storage.sync_s3_to_local("data", "data")
         
-        # Only reindex if absolutely necessary (skip on startup to save memory)
-        # Reindexing will happen on first API call if needed
-        print("Storage initialization complete - reindexing will happen on demand")
+        # Load embeddings from S3 if available
+        embeddings_data = s3_storage.load_embeddings()
+        if embeddings_data:
+            # Save to local for immediate use
+            with open(EMBEDDINGS_FILE, 'wb') as f:
+                pickle.dump(embeddings_data, f)
+            print("Loaded embeddings from S3")
+        
+        # Run auto-detect after sync
+        if _needs_reindex():
+            _reindex_documents()
+            # Save new embeddings to S3
+            if EMBEDDINGS_FILE.exists():
+                with open(EMBEDDINGS_FILE, 'rb') as f:
+                    embeddings_data = pickle.load(f)
+                s3_storage.save_embeddings(embeddings_data)
+                print("Saved embeddings to S3")
     except Exception as e:
         print(f"Storage initialization failed: {e}")
-        # Minimal fallback - no reindexing on startup
-        pass
+        # Fallback to local-only mode
+        try:
+            if _needs_reindex():
+                _reindex_documents()
+        except Exception:
+            pass
 
-# Run initialization on startup (minimal)
+# Run initialization on startup
 _initialize_storage()
 
 # WebSocket connection manager
@@ -152,17 +156,7 @@ manager = ConnectionManager()
 @app.get("/")
 async def root():
     """Root endpoint"""
-    return {
-        "message": "RAG Chatbot API is running",
-        "version": "1.0.0",
-        "endpoints": {
-            "health": "/health",
-            "upload": "/upload",
-            "chat": "/chat",
-            "files": "/files",
-            "websocket": "/ws"
-        }
-    }
+    return {"message": "RAG Chatbot API is running!", "status": "healthy"}
 
 @app.get("/health")
 async def health_check():
@@ -171,49 +165,25 @@ async def health_check():
     Returns fields in both snake_case and camelCase to match the frontend.
     """
     try:
-        # Only reindex if absolutely necessary (save memory)
         if _needs_reindex():
-            print("Reindexing documents on health check...")
             _reindex_documents()
-            # Save to S3 if configured
-            if s3_storage.s3_client and EMBEDDINGS_FILE.exists():
-                with open(EMBEDDINGS_FILE, 'rb') as f:
-                    embeddings_data = pickle.load(f)
-                s3_storage.save_embeddings(embeddings_data)
-    except Exception as e:
-        print(f"Health check reindex failed: {e}")
+    except Exception:
         # ignore in health response
         pass
-    
     ready = EMBEDDINGS_FILE.exists()
-    
-    # Get memory usage
-    process = psutil.Process()
-    memory_mb = process.memory_info().rss / 1024 / 1024
-    
     # Provide both naming styles for compatibility
     return {
         "status": "healthy",
         "healthy": True,
         "embeddings_ready": ready,
         "embeddingsReady": ready,
-        "memory_usage_mb": round(memory_mb, 1),
         "message": "Backend is running successfully"
     }
 
-@app.get("/memory")
-async def memory_status():
-    """Memory usage endpoint for debugging"""
-    process = psutil.Process()
-    memory_info = process.memory_info()
-    memory_mb = memory_info.rss / 1024 / 1024
-    
-    return {
-        "memory_usage_mb": round(memory_mb, 1),
-        "memory_percent": process.memory_percent(),
-        "available_memory_mb": round(psutil.virtual_memory().available / 1024 / 1024, 1),
-        "total_memory_mb": round(psutil.virtual_memory().total / 1024 / 1024, 1)
-    }
+@app.get("/")
+async def root():
+    """Root endpoint"""
+    return {"message": "RAG Chatbot API is running", "status": "ok"}
 
 @app.post("/upload")
 async def upload_files(files: List[UploadFile] = File(...)):
@@ -247,16 +217,12 @@ async def upload_files(files: List[UploadFile] = File(...)):
         chunks = preprocess_documents(docs)
         create_embeddings(chunks)
         
-        # Sync to S3 after processing (async to save memory)
-        if s3_storage.s3_client:
-            try:
-                s3_storage.sync_local_to_s3("data", "data")
-                if EMBEDDINGS_FILE.exists():
-                    with open(EMBEDDINGS_FILE, 'rb') as f:
-                        embeddings_data = pickle.load(f)
-                    s3_storage.save_embeddings(embeddings_data)
-            except Exception as e:
-                print(f"S3 sync failed: {e}")
+        # Sync to S3 after processing
+        s3_storage.sync_local_to_s3("data", "data")
+        if EMBEDDINGS_FILE.exists():
+            with open(EMBEDDINGS_FILE, 'rb') as f:
+                embeddings_data = pickle.load(f)
+            s3_storage.save_embeddings(embeddings_data)
         
         processed_files = [f for f in uploaded_files]
         
@@ -437,16 +403,12 @@ async def delete_file(filename: str):
         # Recreate embeddings after file deletion
         _reindex_documents()
         
-        # Sync to S3 after deletion (async to save memory)
-        if s3_storage.s3_client:
-            try:
-                s3_storage.sync_local_to_s3("data", "data")
-                if EMBEDDINGS_FILE.exists():
-                    with open(EMBEDDINGS_FILE, 'rb') as f:
-                        embeddings_data = pickle.load(f)
-                    s3_storage.save_embeddings(embeddings_data)
-            except Exception as e:
-                print(f"S3 sync failed: {e}")
+        # Sync to S3 after deletion
+        s3_storage.sync_local_to_s3("data", "data")
+        if EMBEDDINGS_FILE.exists():
+            with open(EMBEDDINGS_FILE, 'rb') as f:
+                embeddings_data = pickle.load(f)
+            s3_storage.save_embeddings(embeddings_data)
         
         return {"message": f"File {filename} deleted successfully"}
         

@@ -4,7 +4,7 @@ from sentence_transformers import SentenceTransformer
 from .preprocessing import preprocess_documents
 from .ingestion import load_documents
 
-# Load the SentenceTransformer model (memory optimized)
+# Load the SentenceTransformer model
 model = SentenceTransformer('all-MiniLM-L6-v2')  # Lightweight and good for local use
 
 def create_embeddings(chunks, save_path="embeddings/vector_index.pkl"):

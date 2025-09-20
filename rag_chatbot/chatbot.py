@@ -114,7 +114,7 @@ def generate_answer_with_hf(retrieved_chunks, query):
         if not answer or len(answer) < 10:
             return generate_answer_improved_fallback(retrieved_chunks, query)
         
-        return answer
+    return answer
         
     except Exception as e:
         print(f"Hugging Face API error: {e}")

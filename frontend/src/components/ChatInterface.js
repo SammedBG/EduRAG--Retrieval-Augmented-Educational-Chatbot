@@ -3,7 +3,7 @@ import axios from 'axios';
 import ReactMarkdown from 'react-markdown';
 import { Send, Bot, User, FileText, AlertCircle, Loader } from 'lucide-react';
 
-const API_BASE_URL = process.env.REACT_APP_API_URL ;
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
 
 export const ChatInterface = ({ systemStatus, files }) => {
   const [messages, setMessages] = useState([]);
