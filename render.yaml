@@ -4,7 +4,7 @@ services:
     env: python
     rootDirectory: .
     buildCommand: |
-      pip install --no-cache-dir --upgrade pip
+      pip install --no-cache-dir --upgrade pip setuptools wheel
       pip install --no-cache-dir -r backend/requirements-minimal.txt
     startCommand: uvicorn backend.main:app --host 0.0.0.0 --port $PORT --workers 1 --timeout-keep-alive 30
     envVars:
