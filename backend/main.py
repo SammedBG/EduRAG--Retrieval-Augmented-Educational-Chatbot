@@ -52,9 +52,9 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:3000",
-        "http://127.0.0.1:3000",,
+        "http://127.0.0.1:3000",
         "https://*.vercel.app",
-        "https://*.onrender.com"
+        "https://*.onrender.com",
         "*"
     ],
     allow_credentials=True,
@@ -65,9 +65,10 @@ app.add_middleware(
 # Create necessary directories
 UPLOAD_DIR = Path("uploads")
 DATA_DIR = Path("data/course_notes")
+PAST_PAPERS_DIR = Path("data/past_papers")
 EMBEDDINGS_DIR = Path("embeddings")
 
-for directory in [UPLOAD_DIR, DATA_DIR, EMBEDDINGS_DIR]:
+for directory in [UPLOAD_DIR, DATA_DIR, PAST_PAPERS_DIR, EMBEDDINGS_DIR]:
     directory.mkdir(parents=True, exist_ok=True)
 
 # ------- Embeddings auto-detect/reindex helpers -------
