@@ -17,6 +17,7 @@ import json
 from typing import List, Optional
 import sys
 import time
+import pickle
 
 
 # Add the rag_chatbot module to the path
