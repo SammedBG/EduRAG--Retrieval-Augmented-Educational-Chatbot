@@ -48,9 +48,15 @@ app = FastAPI(
 # CORS middleware for React frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allow all origins for development
+    allow_origins=[
+        "https://edu-rag-retrieval-augmented-educati.vercel.app",
+        "https://edurag-retrieval-augmented-educational.onrender.com",
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "*"  # Allow all origins for now - can be restricted later
+    ],
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 
@@ -184,10 +190,10 @@ async def health_check():
         "message": "Upload documents to create embeddings" if not ready else "Ready for queries"
     }
 
-@app.get("/")
-async def root():
-    """Root endpoint"""
-    return {"message": "RAG Chatbot API is running", "status": "ok"}
+@app.options("/upload")
+async def upload_options():
+    """Handle preflight requests for upload endpoint"""
+    return {"message": "OK"}
 
 @app.post("/upload")
 async def upload_files(files: List[UploadFile] = File(...)):

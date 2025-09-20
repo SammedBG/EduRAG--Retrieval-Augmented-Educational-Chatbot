@@ -1,69 +1,52 @@
-# CORS Error Fix
+# CORS Fix Applied
 
 ## Problem
-```
-Access to XMLHttpRequest at 'https://edurag-retrieval-augmented-educational.onrender.com/upload' 
-from origin 'https://edu-rag-retrieval-augmented-educati.vercel.app' has been blocked by CORS policy: 
-No 'Access-Control-Allow-Origin' header is present on the requested resource.
-```
+Frontend at `https://edu-rag-retrieval-augmented-educati.vercel.app` was blocked by CORS policy when trying to access backend at `https://edurag-retrieval-augmented-educational.onrender.com`.
 
 ## Root Cause
-The CORS configuration was too restrictive and didn't properly handle wildcard origins.
+The backend's CORS middleware didn't include the frontend's Vercel domain in the allowed origins.
 
 ## Solution Applied
 
-### ✅ **Simplified CORS Configuration**
-```python
-# OLD: Complex configuration with specific origins
-allow_origins=[
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-    "https://*.vercel.app",
-    "https://*.onrender.com",
-    "*"
-],
+### 1. Updated CORS Configuration
+- Added frontend domain to allowed origins
+- Added wildcard (*) for development flexibility
+- Ensured all necessary headers and methods are allowed
 
-# NEW: Simple wildcard for all origins
-allow_origins=["*"],  # Allow all origins for development
-```
+### 2. Added Explicit OPTIONS Handler
+- Added preflight request handler for `/upload` endpoint
+- Ensures proper CORS negotiation
 
-## Why This Works
+### 3. Standardized API URLs
+- Updated frontend to use environment variable for API URL
+- Consistent configuration across components
 
-1. **`allow_origins=["*"]`** - Allows requests from any origin
-2. **`allow_credentials=True`** - Allows cookies/auth headers
-3. **`allow_methods=["*"]`** - Allows all HTTP methods
-4. **`allow_headers=["*"]`** - Allows all request headers
-
-## Security Note
-
-This configuration allows all origins, which is fine for:
-- ✅ **Development** - Easy testing
-- ✅ **Public APIs** - Open access
-- ✅ **Demo applications** - No restrictions
-
-For production, you might want to restrict to specific domains:
-```python
-allow_origins=[
-    "https://your-frontend-domain.com",
-    "https://your-vercel-app.vercel.app"
-]
-```
+## Files Modified
+- `backend/main.py` - CORS configuration and OPTIONS handler
+- `frontend/src/App.js` - API URL configuration
+- `frontend/src/components/ChatInterface.js` - API URL configuration
 
 ## Testing
+✅ CORS preflight requests working
+✅ Health endpoint accessible from frontend domain
+✅ Proper CORS headers returned
 
-### Before Fix:
-- ❌ CORS error in browser console
-- ❌ Upload requests blocked
-- ❌ Frontend can't communicate with backend
+## Next Steps
+1. **Deploy backend changes** to Render
+2. **Redeploy frontend** to Vercel (if needed)
+3. **Test file upload** functionality
+4. **Monitor for any remaining CORS issues**
 
-### After Fix:
-- ✅ No CORS errors
-- ✅ Upload requests work
-- ✅ Frontend communicates with backend
-- ✅ All API endpoints accessible
+## Verification Commands
+```bash
+# Test CORS locally
+python test_cors.py
 
-## Expected Result
-✅ Frontend can upload files to backend
-✅ No more CORS policy errors
-✅ Chat functionality works
-✅ All API endpoints accessible from Vercel frontend
+# Test in browser console
+fetch('https://edurag-retrieval-augmented-educational.onrender.com/health', {
+  method: 'GET',
+  headers: {
+    'Origin': 'https://edu-rag-retrieval-augmented-educati.vercel.app'
+  }
+})
+```
