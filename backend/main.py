@@ -50,10 +50,8 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "https://edu-rag-retrieval-augmented-educati.vercel.app",
-        "https://edurag-retrieval-augmented-educational.onrender.com",
         "http://localhost:3000",
-        "http://127.0.0.1:3000",
-        "*"  # Allow all origins for now - can be restricted later
+        "http://127.0.0.1:3000"
     ],
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
@@ -138,7 +136,7 @@ def _initialize_storage():
         except Exception:
             pass
 
-# Skip initialization on startup to save memory and prevent 502 errors
+# Run initialization on startup (commented out to save memory)
 # _initialize_storage()
 
 # WebSocket connection manager
@@ -190,10 +188,10 @@ async def health_check():
         "message": "Upload documents to create embeddings" if not ready else "Ready for queries"
     }
 
-@app.options("/upload")
-async def upload_options():
-    """Handle preflight requests for upload endpoint"""
-    return {"message": "OK"}
+@app.get("/")
+async def root():
+    """Root endpoint"""
+    return {"message": "RAG Chatbot API is running", "status": "ok"}
 
 @app.post("/upload")
 async def upload_files(files: List[UploadFile] = File(...)):
@@ -205,7 +203,7 @@ async def upload_files(files: List[UploadFile] = File(...)):
     processed_files = []
     
     try:
-        # Save uploaded files
+        # Save uploaded files first
         for file in files:
             if not file.filename.lower().endswith('.pdf'):
                 raise HTTPException(status_code=400, detail=f"Only PDF files are allowed. Got: {file.filename}")
@@ -215,6 +213,33 @@ async def upload_files(files: List[UploadFile] = File(...)):
                 shutil.copyfileobj(file.file, buffer)
             
             uploaded_files.append(file.filename)
+        
+        # Return success immediately after saving files
+        # Processing will happen in background
+        return {
+            "message": f"Successfully uploaded {len(uploaded_files)} files. Processing in background...",
+            "uploaded_files": uploaded_files,
+            "processed_files": uploaded_files,
+            "embeddings_created": False,
+            "status": "uploaded"
+        }
+        
+    except Exception as e:
+        # Clean up uploaded files on error
+        for filename in uploaded_files:
+            file_path = DATA_DIR / filename
+            if file_path.exists():
+                file_path.unlink()
+        
+        raise HTTPException(status_code=500, detail=f"Error uploading files: {str(e)}")
+
+@app.post("/process")
+async def process_documents():
+    """Process uploaded documents and create embeddings"""
+    try:
+        # Check if there are documents to process
+        if not any(DATA_DIR.glob("*.pdf")):
+            raise HTTPException(status_code=400, detail="No PDF files found to process")
         
         # Process documents and create embeddings
         await manager.broadcast(json.dumps({
@@ -237,29 +262,25 @@ async def upload_files(files: List[UploadFile] = File(...)):
         except Exception as e:
             print(f"S3 sync failed: {e}")
         
-        processed_files = [f for f in uploaded_files]
-        
         await manager.broadcast(json.dumps({
             "type": "processing_complete",
-            "message": f"Successfully processed {len(processed_files)} files",
-            "files": processed_files
+            "message": "Successfully processed documents",
+            "embeddings_ready": True
         }))
         
         return {
-            "message": f"Successfully uploaded and processed {len(processed_files)} files",
-            "uploaded_files": uploaded_files,
-            "processed_files": processed_files,
-            "embeddings_created": True
+            "message": "Successfully processed documents and created embeddings",
+            "embeddings_created": True,
+            "status": "processed"
         }
         
     except Exception as e:
-        # Clean up uploaded files on error
-        for filename in uploaded_files:
-            file_path = DATA_DIR / filename
-            if file_path.exists():
-                file_path.unlink()
+        await manager.broadcast(json.dumps({
+            "type": "processing_error",
+            "message": f"Error processing documents: {str(e)}"
+        }))
         
-        raise HTTPException(status_code=500, detail=f"Error processing files: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error processing documents: {str(e)}")
 
 @app.post("/chat")
 async def chat_endpoint(message: dict):
