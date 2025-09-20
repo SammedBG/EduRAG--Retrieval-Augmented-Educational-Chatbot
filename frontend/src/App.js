@@ -6,7 +6,7 @@ import { Header } from './components/Header';
 import { StatusBar } from './components/StatusBar';
 import './App.css';
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'https://edurag-retrieval-augmented-educational.onrender.com';
+const API_BASE_URL = process.env.REACT_APP_API_URL ;
 
 function App() {
   const [files, setFiles] = useState([]);
@@ -21,10 +21,13 @@ function App() {
 
   const checkSystemStatus = async () => {
     try {
+      console.log('Checking system status at:', `${API_BASE_URL}/health`);
       const response = await axios.get(`${API_BASE_URL}/health`);
+      console.log('System status response:', response.data);
       setSystemStatus(response.data);
     } catch (error) {
       console.error('Error checking system status:', error);
+      console.error('Error details:', error.response?.data);
       setSystemStatus({ healthy: false, embeddingsReady: false });
     }
   };

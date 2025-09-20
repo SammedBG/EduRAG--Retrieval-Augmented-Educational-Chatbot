@@ -44,13 +44,35 @@ app.add_middleware(
         "http://localhost:3000",
         "http://127.0.0.1:3000",
         "https://edu-rag-retrieval-augmented-educati.vercel.app",
+        "https://rag-chatbot-backend.onrender.com",
         "https://*.vercel.app",
-        "https://*.onrender.com"
+        "https://*.onrender.com",
+        "*"  # Allow all origins for development
     ],
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
+
+# Root endpoint for testing
+@app.get("/")
+async def root():
+    return {
+        "message": "RAG Chatbot API is running",
+        "version": "1.0.0",
+        "endpoints": {
+            "health": "/health",
+            "upload": "/upload",
+            "chat": "/chat",
+            "files": "/files",
+            "websocket": "/ws"
+        }
+    }
+
+# CORS preflight handler
+@app.options("/{path:path}")
+async def options_handler(path: str):
+    return {"message": "OK"}
 
 # Create necessary directories
 UPLOAD_DIR = Path("uploads")
