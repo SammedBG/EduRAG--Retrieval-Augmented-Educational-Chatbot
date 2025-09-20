@@ -2,109 +2,105 @@
 
 ## Problem
 Render's free tier has a **512MB memory limit**. The RAG chatbot was exceeding this limit due to:
-- Large ML models (sentence-transformers)
-- FAISS index loading
-- Multiple Python processes
+- Large model loading (sentence-transformers)
+- Multiple file processing
 - S3 sync operations
+- Embedding generation
 
-## Solutions Applied
+## Solutions Implemented
 
-### 1. **Optimized Dependencies**
-- Pinned specific lightweight versions
-- Removed unnecessary packages
-- Used `--no-cache-dir` for pip installs
+### 1. **Lazy Loading**
+- Only load embeddings from S3 if local ones don't exist
+- Skip S3 sync on startup unless necessary
+- Process files only when needed
 
-### 2. **Lazy Loading**
-- Disabled auto-reindex on startup
-- Removed S3 sync from health checks
-- Only load models when needed
+### 2. **Memory-Efficient S3 Operations**
+- Limit file size to 50MB for sync
+- Only sync essential files (PDF, PKL)
+- Async S3 operations with error handling
 
-### 3. **Memory-Efficient Configuration**
-- Single worker process (`--workers 1`)
-- Optimized build commands
-- Error handling for S3 operations
-
-### 4. **Startup Optimization**
-```python
-# Disabled auto-initialization to save memory
-# _initialize_storage()  # Commented out
+### 3. **Optimized Server Configuration**
+```yaml
+startCommand: uvicorn backend.main:app --host 0.0.0.0 --port $PORT --workers 1 --timeout-keep-alive 30
 ```
+- Single worker process
+- Reduced keep-alive timeout
+- No-cache pip installs
 
-## Current Memory Usage
-- **Base FastAPI**: ~50MB
-- **Sentence Transformers**: ~200MB
-- **FAISS Index**: ~50MB
-- **Python Runtime**: ~100MB
-- **Buffer**: ~100MB
-- **Total**: ~500MB (within 512MB limit)
+### 4. **Smart Reindexing**
+- Only reindex when absolutely necessary
+- Skip unnecessary file operations
+- Minimal fallback on errors
+
+## Memory Usage Breakdown
+
+| Component | Memory Usage | Optimization |
+|-----------|--------------|--------------|
+| FastAPI + Uvicorn | ~50MB | Single worker |
+| Sentence Transformers | ~200MB | Load once, reuse |
+| FAISS Index | ~50-100MB | Lazy loading |
+| S3 Client | ~20MB | Conditional loading |
+| Document Processing | ~100MB | Process in chunks |
+| **Total** | **~420-470MB** | **Under 512MB limit** |
+
+## Additional Optimizations
+
+### If Still Having Issues:
+
+1. **Reduce Model Size**:
+   ```python
+   # In embeddings.py, use smaller model
+   model = SentenceTransformer('all-MiniLM-L6-v2')  # Smaller than default
+   ```
+
+2. **Process Files in Batches**:
+   ```python
+   # Process max 3 files at once
+   for i in range(0, len(files), 3):
+       batch = files[i:i+3]
+       process_batch(batch)
+   ```
+
+3. **Use Render's Paid Tier**:
+   - $7/month for 1GB memory
+   - $25/month for 2GB memory
 
 ## Monitoring Memory Usage
 
-### Check Memory in Render Logs
-```bash
-# Look for these in your Render logs:
-"Out of memory (used over 512Mi)"
-"Memory usage: XXX MB"
-```
+Add this to your backend to monitor memory:
 
-### Local Testing
-```bash
-# Test memory usage locally
-pip install memory-profiler
-python -m memory_profiler backend/main.py
-```
-
-## Further Optimizations (if needed)
-
-### 1. **Use Smaller Models**
 ```python
-# In embeddings.py, use a smaller model:
-model = SentenceTransformer('all-MiniLM-L6-v2')  # 22MB vs 420MB
+import psutil
+import os
+
+def log_memory_usage():
+    process = psutil.Process(os.getpid())
+    memory_mb = process.memory_info().rss / 1024 / 1024
+    print(f"Memory usage: {memory_mb:.1f}MB")
 ```
 
-### 2. **Reduce Chunk Size**
-```python
-# In preprocessing.py:
-chunk_size = 200  # Reduce from 500
-overlap = 50      # Reduce from 100
-```
+## Deployment Checklist
 
-### 3. **Disable S3 Sync**
-```python
-# Comment out S3 operations in main.py
-# s3_storage.sync_local_to_s3("data", "data")
-```
-
-### 4. **Use External APIs Only**
-```python
-# Skip local model generation entirely
-# Use only Groq/HuggingFace APIs
-```
-
-## Alternative: Upgrade to Paid Tier
-
-If you need more memory:
-- **Starter Plan**: $7/month, 512MB RAM
-- **Standard Plan**: $25/month, 1GB RAM
-- **Pro Plan**: $85/month, 2GB RAM
+- [ ] Use optimized `render.yaml`
+- [ ] Set environment variables
+- [ ] Monitor deployment logs
+- [ ] Test with small files first
+- [ ] Scale up gradually
 
 ## Troubleshooting
 
-### Still Getting Memory Errors?
-1. **Check logs** for specific memory usage
-2. **Reduce chunk sizes** in preprocessing
-3. **Use smaller embedding models**
-4. **Disable S3 sync** temporarily
-5. **Consider paid tier** for production
+### "Out of memory" Error:
+1. Check file sizes (keep under 10MB each)
+2. Reduce number of concurrent uploads
+3. Use smaller embedding model
+4. Consider paid Render tier
 
-### Performance vs Memory Trade-offs
-- **More Memory**: Better performance, larger models
-- **Less Memory**: Slower processing, smaller models
-- **Current Setup**: Balanced for free tier
+### Slow Performance:
+1. Enable S3 for persistent storage
+2. Use smaller model for faster processing
+3. Optimize chunk sizes
 
-## Success Indicators
-✅ Deployment completes without "Out of memory" errors
-✅ Health check returns `embeddings_ready: true`
-✅ File uploads work correctly
-✅ Chat responses are generated
-
+### S3 Sync Issues:
+1. Check AWS credentials
+2. Verify bucket permissions
+3. Monitor S3 costs

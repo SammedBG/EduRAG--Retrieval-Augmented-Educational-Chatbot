@@ -11,12 +11,10 @@ def main():
     """Launch the RAG Chatbot"""
     print("🚀 Starting RAG Chatbot...")
     
-    # Check if virtual environment is activated (simplified check)
-    venv_path = os.path.join(os.getcwd(), '.venv')
-    if not os.path.exists(venv_path):
-        print("⚠️  Virtual environment not found.")
-        print("   Please create and activate your virtual environment first:")
-        print("   python -m venv .venv")
+    # Check if virtual environment is activated
+    if not hasattr(sys, 'real_prefix') and not (hasattr(sys, 'base_prefix') and sys.base_prefix != sys.prefix):
+        print("⚠️  Virtual environment not detected.")
+        print("   Please activate your virtual environment first:")
         print("   .venv\\Scripts\\activate  (Windows)")
         print("   source .venv/bin/activate  (Linux/Mac)")
         return

@@ -85,7 +85,7 @@ class S3Storage:
             return False
 
     def sync_local_to_s3(self, local_dir: str, s3_prefix: str) -> None:
-        """Sync local directory to S3"""
+        """Sync local directory to S3 (memory optimized)"""
         if not self.s3_client:
             return
         
@@ -93,11 +93,14 @@ class S3Storage:
         if not local_path.exists():
             return
         
-        for file_path in local_path.rglob('*'):
-            if file_path.is_file():
-                relative_path = file_path.relative_to(local_path)
-                s3_key = f"{s3_prefix}/{relative_path}".replace('\\', '/')
-                self.upload_file(str(file_path), s3_key)
+        # Only sync essential files to save memory
+        essential_files = ['*.pdf', '*.pkl']
+        for pattern in essential_files:
+            for file_path in local_path.rglob(pattern):
+                if file_path.is_file() and file_path.stat().st_size < 50 * 1024 * 1024:  # < 50MB
+                    relative_path = file_path.relative_to(local_path)
+                    s3_key = f"{s3_prefix}/{relative_path}".replace('\\', '/')
+                    self.upload_file(str(file_path), s3_key)
 
     def sync_s3_to_local(self, s3_prefix: str, local_dir: str) -> None:
         """Sync S3 directory to local"""

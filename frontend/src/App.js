@@ -41,34 +41,25 @@ function App() {
   const handleFileUpload = async (uploadedFiles) => {
     setIsProcessing(true);
     try {
-      // Step 1: Upload files
       const formData = new FormData();
       uploadedFiles.forEach(file => {
         formData.append('files', file);
       });
 
-      const uploadResponse = await axios.post(`${API_BASE_URL}/upload`, formData, {
+      const response = await axios.post(`${API_BASE_URL}/upload`, formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
         },
       });
 
-      // Reload files after upload
+      // Reload files and check status
       await loadFiles();
-      
-      alert(`Successfully uploaded ${uploadResponse.data.uploaded_files.length} files!`);
-      
-      // Step 2: Process documents
-      alert('Now processing documents... This may take a moment.');
-      const processResponse = await axios.post(`${API_BASE_URL}/process`);
-      
-      // Check status after processing
       await checkSystemStatus();
       
-      alert(`Successfully processed documents! ${processResponse.data.message}`);
+      alert(`Successfully processed ${response.data.processed_files.length} files!`);
     } catch (error) {
-      console.error('Error uploading/processing files:', error);
-      alert(`Error: ${error.response?.data?.detail || error.message}`);
+      console.error('Error uploading files:', error);
+      alert(`Error uploading files: ${error.response?.data?.detail || error.message}`);
     } finally {
       setIsProcessing(false);
     }
