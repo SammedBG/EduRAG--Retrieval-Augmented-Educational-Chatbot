@@ -5,8 +5,9 @@ websockets==12.0
 python-dotenv==1.0.0
 aiofiles==23.2.1
 boto3==1.34.0
-# Lightweight alternatives for memory optimization
+# Compatible versions to avoid import errors
 sentence-transformers==2.2.2
-faiss-cpu>=1.9.0
+huggingface-hub==0.16.4
+faiss-cpu==1.7.4
 PyPDF2==3.0.1
 requests==2.31.0
