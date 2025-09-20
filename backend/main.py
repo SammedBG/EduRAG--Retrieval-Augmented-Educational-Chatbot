@@ -27,7 +27,16 @@ from rag_chatbot.preprocessing import preprocess_documents
 from rag_chatbot.embeddings import create_embeddings
 from rag_chatbot.retrieval import retrieve
 from rag_chatbot.chatbot import generate_answer
-from s3_storage import s3_storage
+try:
+    from s3_storage import s3_storage
+except ImportError:
+    # Create a dummy S3 storage if module not found
+    class DummyS3Storage:
+        def sync_local_to_s3(self, *args, **kwargs): pass
+        def sync_s3_to_local(self, *args, **kwargs): pass
+        def save_embeddings(self, *args, **kwargs): return False
+        def load_embeddings(self, *args, **kwargs): return None
+    s3_storage = DummyS3Storage()
 
 app = FastAPI(
     title="RAG Chatbot API",
