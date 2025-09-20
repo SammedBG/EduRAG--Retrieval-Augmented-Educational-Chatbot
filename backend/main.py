@@ -129,8 +129,8 @@ def _initialize_storage():
         except Exception:
             pass
 
-# Run initialization on startup
-_initialize_storage()
+# Run initialization on startup (commented out to save memory)
+# _initialize_storage()
 
 # WebSocket connection manager
 class ConnectionManager:
@@ -164,12 +164,13 @@ async def health_check():
 
     Returns fields in both snake_case and camelCase to match the frontend.
     """
-    try:
-        if _needs_reindex():
-            _reindex_documents()
-    except Exception:
-        # ignore in health response
-        pass
+    # Skip auto-reindex in health check to save memory
+    # try:
+    #     if _needs_reindex():
+    #         _reindex_documents()
+    # except Exception:
+    #     # ignore in health response
+    #     pass
     ready = EMBEDDINGS_FILE.exists()
     # Provide both naming styles for compatibility
     return {
@@ -217,12 +218,15 @@ async def upload_files(files: List[UploadFile] = File(...)):
         chunks = preprocess_documents(docs)
         create_embeddings(chunks)
         
-        # Sync to S3 after processing
-        s3_storage.sync_local_to_s3("data", "data")
-        if EMBEDDINGS_FILE.exists():
-            with open(EMBEDDINGS_FILE, 'rb') as f:
-                embeddings_data = pickle.load(f)
-            s3_storage.save_embeddings(embeddings_data)
+        # Sync to S3 after processing (only if S3 is configured)
+        try:
+            s3_storage.sync_local_to_s3("data", "data")
+            if EMBEDDINGS_FILE.exists():
+                with open(EMBEDDINGS_FILE, 'rb') as f:
+                    embeddings_data = pickle.load(f)
+                s3_storage.save_embeddings(embeddings_data)
+        except Exception as e:
+            print(f"S3 sync failed: {e}")
         
         processed_files = [f for f in uploaded_files]
         
@@ -403,12 +407,15 @@ async def delete_file(filename: str):
         # Recreate embeddings after file deletion
         _reindex_documents()
         
-        # Sync to S3 after deletion
-        s3_storage.sync_local_to_s3("data", "data")
-        if EMBEDDINGS_FILE.exists():
-            with open(EMBEDDINGS_FILE, 'rb') as f:
-                embeddings_data = pickle.load(f)
-            s3_storage.save_embeddings(embeddings_data)
+        # Sync to S3 after deletion (only if S3 is configured)
+        try:
+            s3_storage.sync_local_to_s3("data", "data")
+            if EMBEDDINGS_FILE.exists():
+                with open(EMBEDDINGS_FILE, 'rb') as f:
+                    embeddings_data = pickle.load(f)
+                s3_storage.save_embeddings(embeddings_data)
+        except Exception as e:
+            print(f"S3 sync failed: {e}")
         
         return {"message": f"File {filename} deleted successfully"}
         
