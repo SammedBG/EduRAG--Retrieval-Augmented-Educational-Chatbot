@@ -6,7 +6,7 @@ services:
     buildCommand: |
       pip install --no-cache-dir --upgrade pip
       pip install --no-cache-dir -r backend/requirements.txt
-    startCommand: uvicorn backend.main:app --host 0.0.0.0 --port $PORT --workers 1
+        startCommand: uvicorn backend.test_main:app --host 0.0.0.0 --port $PORT --workers 1
     envVars:
       - key: GROQ_API_KEY
         sync: false
