@@ -308,7 +308,7 @@ async def websocket_endpoint(websocket: WebSocket):
     await manager.connect(websocket)
     try:
         while True:
-            # Receive message from client
+            # Receive message from clienta
             data = await websocket.receive_text()
             message_data = json.loads(data)
             
