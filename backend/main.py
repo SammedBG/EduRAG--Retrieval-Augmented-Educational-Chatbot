@@ -138,7 +138,7 @@ def _initialize_storage():
         except Exception:
             pass
 
-# Run initialization on startup (commented out to save memory)
+# Skip initialization on startup to save memory and prevent 502 errors
 # _initialize_storage()
 
 # WebSocket connection manager
