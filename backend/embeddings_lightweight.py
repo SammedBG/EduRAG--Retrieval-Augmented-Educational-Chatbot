@@ -11,8 +11,8 @@ import faiss
 import gc
 import os
 
-# Use a smaller, more memory-efficient model
-MODEL_NAME = "all-MiniLM-L6-v2"  # Much smaller than default models
+# Use the smallest possible model for 400MB RAM
+MODEL_NAME = "all-MiniLM-L3-v2"  # Even smaller than L6-v2
 EMBEDDINGS_FILE = Path("embeddings/vector_index.pkl")
 
 def get_lightweight_model():
@@ -33,7 +33,7 @@ def get_lightweight_model():
             print(f"Fallback model failed: {e2}")
             return None
 
-def create_embeddings_lightweight(chunks, batch_size=8):
+def create_embeddings_lightweight(chunks, batch_size=4):
     """
     Create embeddings with memory optimization
     Processes in small batches to reduce memory usage

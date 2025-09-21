@@ -1,4 +1,4 @@
-# Ultra-minimal requirements for Render free tier (512MB RAM)
+# Ultra-minimal requirements for 400MB RAM limit
 fastapi==0.104.1
 uvicorn==0.24.0
 python-multipart==0.0.6
@@ -6,10 +6,10 @@ python-dotenv==1.0.0
 aiofiles==23.2.1
 boto3==1.34.0
 
-# Lightweight ML dependencies
+# Minimal ML dependencies (CPU-only, no CUDA)
 sentence-transformers==2.2.2
-faiss-cpu==1.12.0
-numpy==1.26.4
+faiss-cpu==1.7.4
+numpy==1.24.3
 
 # PDF processing
 PyPDF2==3.0.1
