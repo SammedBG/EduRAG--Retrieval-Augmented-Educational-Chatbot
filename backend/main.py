@@ -25,7 +25,8 @@ sys.path.append(str(Path(__file__).parent.parent))
 
 from rag_chatbot.ingestion import load_documents
 from rag_chatbot.preprocessing import preprocess_documents
-from embeddings_lightweight import create_embeddings_lightweight, load_embeddings_lightweight, search_embeddings_lightweight
+from rag_chatbot.embeddings import create_embeddings
+from rag_chatbot.retrieval import retrieve
 from rag_chatbot.chatbot import generate_answer
 from s3_storage import s3_storage
 
@@ -94,7 +95,7 @@ def _reindex_documents() -> None:
                 pass
         return
     chunks = preprocess_documents(docs)
-    create_embeddings_lightweight(chunks)
+    create_embeddings(chunks)
 
 # Initialize S3 storage and sync on startup
 def _initialize_storage():
@@ -215,7 +216,7 @@ async def upload_files(files: List[UploadFile] = File(...)):
         # Load and process documents
         docs = load_documents()
         chunks = preprocess_documents(docs)
-        create_embeddings_lightweight(chunks)
+        create_embeddings(chunks)
         
         # Sync to S3 after processing
         s3_storage.sync_local_to_s3("data", "data")
@@ -262,12 +263,11 @@ async def chat_endpoint(message: dict):
             _reindex_documents()
 
         # Check if embeddings exist
-        index, chunks = load_embeddings_lightweight()
-        if not index or not chunks:
+        if not EMBEDDINGS_FILE.exists():
             raise HTTPException(status_code=400, detail="No documents processed yet. Please upload files first.")
         
         # Retrieve relevant chunks
-        results = search_embeddings_lightweight(query, top_k=3)
+        results = retrieve(query, top_k=3)
         
         if not results:
             return {
@@ -323,8 +323,7 @@ async def websocket_endpoint(websocket: WebSocket):
             
             try:
                 # Check if embeddings exist
-                index, chunks = load_embeddings_lightweight()
-                if not index or not chunks:
+                if not Path("embeddings/vector_index.pkl").exists():
                     await manager.send_personal_message(json.dumps({
                         "type": "error",
                         "message": "No documents processed yet. Please upload files first."
@@ -332,7 +331,7 @@ async def websocket_endpoint(websocket: WebSocket):
                     continue
                 
                 # Retrieve relevant chunks
-                results = search_embeddings_lightweight(query, top_k=3)
+                results = retrieve(query, top_k=3)
                 
                 if not results:
                     await manager.send_personal_message(json.dumps({
