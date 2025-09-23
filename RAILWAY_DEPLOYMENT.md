@@ -15,8 +15,7 @@
 
 Your repo is already ready! The files are in place:
 - ✅ `railway.json` - Railway configuration
-- ✅ `nixpacks.toml` - Build configuration (CPU-only)
-- ✅ `requirements-minimal.txt` - Lightweight dependencies
+- ✅ `requirements.txt` - Lightweight dependencies (CPU-only)
 - ✅ `Procfile` - Process configuration
 - ✅ `runtime.txt` - Python version specification
 - ✅ AWS S3 integration for storage
