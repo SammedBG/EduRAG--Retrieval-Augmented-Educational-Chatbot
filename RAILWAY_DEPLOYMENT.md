@@ -7,6 +7,7 @@
 - **Free tier** with generous limits
 - **Auto-deploy** from GitHub
 - **Perfect for ML models**
+- **CPU-only optimized** (no CUDA bloat)
 
 ## 📋 Step-by-Step Deployment
 
@@ -14,9 +15,10 @@
 
 Your repo is already ready! The files are in place:
 - ✅ `railway.json` - Railway configuration
+- ✅ `nixpacks.toml` - Build configuration (CPU-only)
+- ✅ `requirements-minimal.txt` - Lightweight dependencies
 - ✅ `Procfile` - Process configuration
 - ✅ `runtime.txt` - Python version specification
-- ✅ `backend/requirements.txt` - Dependencies
 - ✅ AWS S3 integration for storage
 
 ### 2. Deploy to Railway
@@ -89,10 +91,16 @@ AWS_S3_BUCKET=your_bucket_name
 ## 📊 Resource Usage
 
 Your RAG chatbot will use:
-- **~400MB RAM** for models
-- **~200MB** for dependencies
+- **~200MB RAM** for lightweight models
+- **~150MB** for CPU-only dependencies
 - **~100MB** for application
-- **Total**: ~700MB (fits in 1GB free tier!)
+- **Total**: ~450MB (fits easily in 1GB free tier!)
+
+### **CPU-Only Optimization:**
+- **No CUDA packages** (saves 3GB+ download)
+- **Lightweight PyTorch** (CPU-only version)
+- **Smaller model sizes** (optimized for CPU)
+- **Faster deployment** (no GPU dependencies)
 
 ## 🚨 Troubleshooting
 

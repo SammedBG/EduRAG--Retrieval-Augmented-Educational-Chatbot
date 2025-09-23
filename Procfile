@@ -1,1 +1,1 @@
-web: cd backend && python main.py
+web: pip install -r requirements-minimal.txt && cd backend && python main.py
