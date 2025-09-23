@@ -14,7 +14,8 @@
 
 Your repo is already ready! The files are in place:
 - ✅ `railway.json` - Railway configuration
-- ✅ `nixpacks.toml` - Build configuration
+- ✅ `Procfile` - Process configuration
+- ✅ `runtime.txt` - Python version specification
 - ✅ `backend/requirements.txt` - Dependencies
 - ✅ AWS S3 integration for storage
 
