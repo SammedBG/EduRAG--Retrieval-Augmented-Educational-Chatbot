@@ -417,11 +417,10 @@ async def delete_file(filename: str):
         raise HTTPException(status_code=500, detail=f"Error deleting file: {str(e)}")
 
 if __name__ == "__main__":
-    port = int(os.getenv("PORT", 8000))
     uvicorn.run(
         "main:app",
         host="0.0.0.0",
-        port=port,
-        reload=False,
+        port=8000,
+        reload=True,
         log_level="info"
     )
