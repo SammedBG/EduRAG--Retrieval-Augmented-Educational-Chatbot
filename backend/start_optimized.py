@@ -45,6 +45,7 @@ def check_dependencies():
         import websockets
         import boto3
         import requests
+        import numpy
         print("✅ Core dependencies available")
     except ImportError as e:
         missing_deps.append(str(e))
@@ -83,6 +84,9 @@ def main():
     if not ml_available:
         print("⚠️ Running in API-only mode (no local ML models)")
         os.environ['ML_MODELS_DISABLED'] = 'true'
+    else:
+        print("✅ Full ML mode enabled")
+        os.environ['ML_MODELS_DISABLED'] = 'false'
     
     # Import and start the app
     try:
