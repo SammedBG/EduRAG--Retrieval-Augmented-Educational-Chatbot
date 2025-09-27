@@ -6,7 +6,7 @@ services:
     rootDirectory: .
     buildCommand: |
       pip install --no-cache-dir --upgrade pip setuptools wheel
-      pip install --no-cache-dir -r backend/requirements-ultra-minimal.txt && pip install --no-cache-dir -r backend/requirements-fallback.txt
+      pip install --no-cache-dir -r backend/requirements-ultra-minimal.txt
     startCommand: cd backend && python start_optimized.py
     envVars:
       - key: GROQ_API_KEY
