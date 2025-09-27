@@ -30,26 +30,39 @@ from rag_chatbot.retrieval import retrieve
 from rag_chatbot.chatbot import generate_answer
 from s3_storage import s3_storage
 
+# Check if ML models are disabled (for ultra-minimal deployment)
+ML_MODELS_DISABLED = os.getenv("ML_MODELS_DISABLED", "false").lower() == "true"
+
 app = FastAPI(
     title="RAG Chatbot API",
     description="AI-powered document querying system",
     version="1.0.0"
 )
 
-origins = ["*"]
+# Production-ready CORS configuration
+ALLOWED_ORIGINS = [
+    "http://localhost:3000",  # Local development
+    "http://127.0.0.1:3000",  # Local development
+    "https://*.vercel.app",   # All Vercel deployments
+    "https://*.onrender.com", # All Render deployments
+]
+
+# Add specific Vercel URL from environment
+VERCEL_URL = os.getenv("VERCEL_URL")
+if VERCEL_URL:
+    ALLOWED_ORIGINS.append(f"https://{VERCEL_URL}")
+
+# Add specific frontend URL from environment
+FRONTEND_URL = os.getenv("FRONTEND_URL")
+if FRONTEND_URL:
+    ALLOWED_ORIGINS.append(FRONTEND_URL)
 
 # CORS middleware for React frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-        "https://edu-rag-retrieval-augmented-educati.vercel.app",
-        "https://*.vercel.app",
-        "https://*.onrender.com"
-    ],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 
@@ -85,17 +98,25 @@ def _needs_reindex() -> bool:
     return _latest_pdf_mtime() > emb_mtime
 
 def _reindex_documents() -> None:
-    docs = load_documents()
-    if not docs:
-        # If no docs, remove embeddings file if present
-        if EMBEDDINGS_FILE.exists():
-            try:
-                EMBEDDINGS_FILE.unlink()
-            except Exception:
-                pass
+    if ML_MODELS_DISABLED:
+        print("ML models disabled - skipping reindexing")
         return
-    chunks = preprocess_documents(docs)
-    create_embeddings(chunks)
+    
+    try:
+        docs = load_documents()
+        if not docs:
+            # If no docs, remove embeddings file if present
+            if EMBEDDINGS_FILE.exists():
+                try:
+                    EMBEDDINGS_FILE.unlink()
+                except Exception:
+                    pass
+            return
+        chunks = preprocess_documents(docs)
+        create_embeddings(chunks)
+    except Exception as e:
+        print(f"Reindexing failed: {e}")
+        # Continue without embeddings for API-only mode
 
 # Initialize S3 storage and sync on startup
 def _initialize_storage():
@@ -125,7 +146,7 @@ def _initialize_storage():
         print(f"Storage initialization failed: {e}")
         # Fallback to local-only mode
         try:
-            if _needs_reindex():
+            if not ML_MODELS_DISABLED and _needs_reindex():
                 _reindex_documents()
         except Exception:
             pass
@@ -166,12 +187,12 @@ async def health_check():
     Returns fields in both snake_case and camelCase to match the frontend.
     """
     try:
-        if _needs_reindex():
+        if not ML_MODELS_DISABLED and _needs_reindex():
             _reindex_documents()
     except Exception:
         # ignore in health response
         pass
-    ready = EMBEDDINGS_FILE.exists()
+    ready = ML_MODELS_DISABLED or EMBEDDINGS_FILE.exists()
     # Provide both naming styles for compatibility
     return {
         "status": "healthy",
@@ -214,9 +235,12 @@ async def upload_files(files: List[UploadFile] = File(...)):
         }))
         
         # Load and process documents
-        docs = load_documents()
-        chunks = preprocess_documents(docs)
-        create_embeddings(chunks)
+        if not ML_MODELS_DISABLED:
+            docs = load_documents()
+            chunks = preprocess_documents(docs)
+            create_embeddings(chunks)
+        else:
+            print("ML models disabled - skipping document processing")
         
         # Sync to S3 after processing
         s3_storage.sync_local_to_s3("data", "data")
@@ -259,25 +283,30 @@ async def chat_endpoint(message: dict):
     
     try:
         # Ensure embeddings are current
-        if _needs_reindex():
+        if not ML_MODELS_DISABLED and _needs_reindex():
             _reindex_documents()
 
-        # Check if embeddings exist
-        if not EMBEDDINGS_FILE.exists():
+        # Check if embeddings exist (skip if ML models disabled)
+        if not ML_MODELS_DISABLED and not EMBEDDINGS_FILE.exists():
             raise HTTPException(status_code=400, detail="No documents processed yet. Please upload files first.")
         
-        # Retrieve relevant chunks
-        results = retrieve(query, top_k=3)
-        
-        if not results:
-            return {
-                "answer": "I couldn't find relevant information in the uploaded documents.",
-                "sources": [],
-                "status": "no_results"
-            }
-        
-        # Generate answer
-        answer = generate_answer(results, query)
+        # Retrieve relevant chunks (skip if ML models disabled)
+        if ML_MODELS_DISABLED:
+            # API-only mode - use external APIs directly
+            answer = generate_answer([], query)
+            results = []
+        else:
+            results = retrieve(query, top_k=3)
+            
+            if not results:
+                return {
+                    "answer": "I couldn't find relevant information in the uploaded documents.",
+                    "sources": [],
+                    "status": "no_results"
+                }
+            
+            # Generate answer
+            answer = generate_answer(results, query)
         
         # Prepare sources
         sources = []
@@ -402,7 +431,8 @@ async def delete_file(filename: str):
         file_path.unlink()
         
         # Recreate embeddings after file deletion
-        _reindex_documents()
+        if not ML_MODELS_DISABLED:
+            _reindex_documents()
         
         # Sync to S3 after deletion
         s3_storage.sync_local_to_s3("data", "data")
@@ -417,10 +447,12 @@ async def delete_file(filename: str):
         raise HTTPException(status_code=500, detail=f"Error deleting file: {str(e)}")
 
 if __name__ == "__main__":
+    # Production-ready server configuration
+    port = int(os.environ.get("PORT", 8000))
     uvicorn.run(
         "main:app",
         host="0.0.0.0",
-        port=8000,
-        reload=True,
+        port=port,
+        workers=1,  # Single worker for free tier
         log_level="info"
     )
